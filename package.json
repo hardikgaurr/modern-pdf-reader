@@ -1,0 +1,16 @@
+{
+  "name": "modern-pdf-reader-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "prepare": "husky",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@commitlint/cli": "latest",
+    "@commitlint/config-conventional": "latest",
+    "husky": "latest",
+    "prettier": "latest"
+  }
+}
