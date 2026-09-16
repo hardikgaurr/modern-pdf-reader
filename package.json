@@ -11,6 +11,12 @@
     "@commitlint/cli": "latest",
     "@commitlint/config-conventional": "latest",
     "husky": "latest",
+    "lint-staged": "latest",
     "prettier": "latest"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,json,css,scss,md,html}": [
+      "prettier --write"
+    ]
   }
 }
