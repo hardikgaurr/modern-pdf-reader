@@ -6,6 +6,7 @@ interface AppEnv {
   supabaseUrl: string;
   supabaseServiceKey: string;
   supabaseBucketName: string;
+  graphicsMagickPath: string;
   port: number;
 }
 
@@ -36,5 +37,6 @@ export const env: AppEnv = {
   supabaseUrl: getRequiredEnv("SUPABASE_URL"),
   supabaseServiceKey: getRequiredEnv("SUPABASE_SERVICE_KEY"),
   supabaseBucketName: getRequiredEnv("SUPABASE_BUCKET_NAME"),
+  graphicsMagickPath: getRequiredEnv("GRAPHICSMAGICK_PATH"),
   port: getPort(),
 };

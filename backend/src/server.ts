@@ -5,6 +5,7 @@ import { env } from "./config/env.js";
 import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/auth.routes.js";
 import subscriptionRoutes from "./routes/subscription.routes.js";
+import documentsRoutes from "./routes/documents.routes.js";
 
 export function createApp(): Express {
   const app = express();
@@ -14,6 +15,7 @@ export function createApp(): Express {
 
   app.use("/api/auth", authRoutes);
   app.use("/api/subscription", subscriptionRoutes);
+  app.use("/api/documents", documentsRoutes);
 
   return app;
 }
