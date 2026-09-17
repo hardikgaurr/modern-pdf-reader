@@ -33,8 +33,25 @@ export function requireAuth(
     req.user = verifyToken(token);
     next();
   } catch {
-    res.status(401).json({ error: "Invalid or expired token" });
+    res.status(401).json({
+      error: "Invalid or expired token",
+    });
   }
+}
+
+export function requireAdmin(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (req.user?.role !== "admin") {
+    res.status(403).json({
+      error: "Administrator access required",
+    });
+    return;
+  }
+
+  next();
 }
 
 export function requireSubscriber(
@@ -43,9 +60,9 @@ export function requireSubscriber(
   next: NextFunction,
 ): void {
   if (req.user?.role !== "subscriber") {
-    res
-      .status(403)
-      .json({ error: "Subscription required to access this content" });
+    res.status(403).json({
+      error: "Subscription required to access this content",
+    });
     return;
   }
 
