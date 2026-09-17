@@ -4,6 +4,7 @@ import type { Response } from "express";
 
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { DocumentModel } from "../models/Document.js";
+import { getPdfPageCount } from "../services/pdf-validation.service.js";
 import { renderAllPdfPages } from "../services/pdf-processor.service.js";
 import { removeObjects, uploadObject } from "../services/storage.service.js";
 
@@ -19,11 +20,15 @@ export async function uploadDocument(
   res: Response,
 ): Promise<void> {
   const file = req.file;
+
   const title =
     typeof req.body?.title === "string" ? req.body.title.trim() : "";
 
   if (!file) {
-    res.status(400).json({ error: "PDF file is required" });
+    res.status(400).json({
+      error: "PDF file is required",
+    });
+
     return;
   }
 
@@ -42,7 +47,11 @@ export async function uploadDocument(
   try {
     fileBuffer = await readFile(file.path);
   } catch {
-    res.status(400).json({ error: "Uploaded file could not be read" });
+    await unlink(file.path).catch(() => undefined);
+
+    res.status(400).json({
+      error: "Uploaded file could not be read",
+    });
 
     return;
   }
@@ -50,7 +59,43 @@ export async function uploadDocument(
   if (!fileBuffer.subarray(0, 5).equals(PDF_MAGIC_BYTES)) {
     await unlink(file.path).catch(() => undefined);
 
-    res.status(400).json({ error: "File is not a valid PDF" });
+    res.status(400).json({
+      error: "File is not a valid PDF",
+    });
+
+    return;
+  }
+
+  let pageCount: number;
+
+  try {
+    pageCount = await getPdfPageCount(fileBuffer);
+  } catch {
+    await unlink(file.path).catch(() => undefined);
+
+    res.status(400).json({
+      error: "File is not a valid PDF",
+    });
+
+    return;
+  }
+
+  if (pageCount < 1) {
+    await unlink(file.path).catch(() => undefined);
+
+    res.status(400).json({
+      error: "PDF contains no pages",
+    });
+
+    return;
+  }
+
+  if (pageCount > MAX_PAGES) {
+    await unlink(file.path).catch(() => undefined);
+
+    res.status(400).json({
+      error: `PDF cannot contain more than ${MAX_PAGES} pages`,
+    });
 
     return;
   }
@@ -70,9 +115,13 @@ export async function uploadDocument(
   try {
     const pages = await renderAllPdfPages(file.path);
 
-    if (pages.length === 0 || pages.length > MAX_PAGES) {
+    if (
+      pages.length === 0 ||
+      pages.length > MAX_PAGES ||
+      pages.length !== pageCount
+    ) {
       throw new Error(
-        `PDF page count (${pages.length}) is outside the allowed range`,
+        `Rendered page count (${pages.length}) does not match validated page count (${pageCount})`,
       );
     }
 
@@ -117,7 +166,9 @@ export async function uploadDocument(
       error,
     );
 
-    res.status(422).json({ error: "PDF processing failed" });
+    res.status(422).json({
+      error: "PDF processing failed",
+    });
   } finally {
     await unlink(file.path).catch(() => undefined);
   }
