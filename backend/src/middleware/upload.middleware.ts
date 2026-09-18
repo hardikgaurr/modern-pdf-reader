@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
-
 import multer from "multer";
 
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB — revisit if real PDFs exceed this
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+export class InvalidPdfUploadError extends Error {
+  constructor() {
+    super("Only PDF files are allowed");
+    this.name = "InvalidPdfUploadError";
+  }
+}
 
 export const pdfUpload = multer({
   storage: multer.diskStorage({
@@ -14,15 +20,22 @@ export const pdfUpload = multer({
         path.extname(file.originalname).toLowerCase() === ".pdf"
           ? ".pdf"
           : ".tmp";
+
       cb(null, `upload-${randomUUID()}${ext}`);
     },
   }),
-  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
+
+  limits: {
+    fileSize: MAX_UPLOAD_BYTES,
+    files: 1,
+  },
+
   fileFilter: (_req, file, cb) => {
     if (file.mimetype !== "application/pdf") {
-      cb(new Error("Only PDF files are allowed"));
+      cb(new InvalidPdfUploadError());
       return;
     }
+
     cb(null, true);
   },
 });

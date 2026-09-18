@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
-
 import type { Response } from "express";
 import { Types } from "mongoose";
-
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { DocumentModel } from "../models/Document.js";
 import { User } from "../models/User.js";
@@ -38,6 +36,7 @@ function getSingleRouteParam(
 
 export async function getPage(req: AuthRequest, res: Response): Promise<void> {
   const documentId = getSingleRouteParam(req.params.id);
+
   const pageNumberParam = getSingleRouteParam(req.params.pageNumber);
 
   if (!documentId || !Types.ObjectId.isValid(documentId)) {
@@ -134,6 +133,8 @@ export async function getPage(req: AuthRequest, res: Response): Promise<void> {
       pageNumber,
     });
 
+    res.set("Cache-Control", "no-store");
+
     res.status(200).json({
       url: signedUrl,
       expiresInSeconds: SIGNED_URL_TTL_SECONDS,
@@ -147,6 +148,7 @@ export async function getPage(req: AuthRequest, res: Response): Promise<void> {
     res.status(500).json({
       error: "Failed to deliver page",
     });
+
     return;
   } finally {
     if (ephemeralPath) {

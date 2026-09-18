@@ -1,6 +1,5 @@
 import type { Response } from "express";
 import { Types } from "mongoose";
-
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { Bookmark } from "../models/Bookmark.js";
 import { DocumentModel } from "../models/Document.js";
@@ -16,6 +15,14 @@ function getSingleRouteParam(
   return value;
 }
 
+function isDuplicateKeyError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  return "code" in error && (error as { code?: unknown }).code === 11000;
+}
+
 async function getAuthorizedSubscriber(
   req: AuthRequest,
   res: Response,
@@ -24,7 +31,6 @@ async function getAuthorizedSubscriber(
     res.status(401).json({
       error: "Authentication required",
     });
-
     return null;
   }
 
@@ -34,7 +40,6 @@ async function getAuthorizedSubscriber(
     res.status(401).json({
       error: "Account no longer exists",
     });
-
     return null;
   }
 
@@ -42,7 +47,6 @@ async function getAuthorizedSubscriber(
     res.status(403).json({
       error: "Subscription required to access bookmarks",
     });
-
     return null;
   }
 
@@ -56,7 +60,6 @@ async function getReadyDocument(documentId: string, res: Response) {
     res.status(400).json({
       error: "Invalid document ID",
     });
-
     return null;
   }
 
@@ -66,7 +69,6 @@ async function getReadyDocument(documentId: string, res: Response) {
     res.status(404).json({
       error: "Document not found",
     });
-
     return null;
   }
 
@@ -74,7 +76,6 @@ async function getReadyDocument(documentId: string, res: Response) {
     res.status(409).json({
       error: "Document is not available for reading",
     });
-
     return null;
   }
 
@@ -105,7 +106,6 @@ export async function listBookmarks(
     res.status(400).json({
       error: "Invalid document ID",
     });
-
     return;
   }
 
@@ -144,7 +144,6 @@ export async function createBookmark(
     res.status(400).json({
       error: "Invalid document ID",
     });
-
     return;
   }
 
@@ -170,7 +169,6 @@ export async function createBookmark(
     res.status(400).json({
       error: "Page number must be a positive integer",
     });
-
     return;
   }
 
@@ -178,7 +176,6 @@ export async function createBookmark(
     res.status(400).json({
       error: "Page number exceeds document length",
     });
-
     return;
   }
 
@@ -194,24 +191,45 @@ export async function createBookmark(
     res.status(200).json({
       bookmark: existingBookmark,
     });
-
     return;
   }
 
-  const bookmark = await Bookmark.create({
-    userId: currentUser._id,
-    documentId: documentRecord._id,
-    pageNumber,
-  });
+  try {
+    const bookmark = await Bookmark.create({
+      userId: currentUser._id,
+      documentId: documentRecord._id,
+      pageNumber,
+    });
 
-  res.status(201).json({
-    bookmark: {
-      id: bookmark._id,
-      pageNumber: bookmark.pageNumber,
-      createdAt: bookmark.createdAt,
-      updatedAt: bookmark.updatedAt,
-    },
-  });
+    res.status(201).json({
+      bookmark: {
+        id: bookmark._id,
+        pageNumber: bookmark.pageNumber,
+        createdAt: bookmark.createdAt,
+        updatedAt: bookmark.updatedAt,
+      },
+    });
+  } catch (error: unknown) {
+    if (!isDuplicateKeyError(error)) {
+      throw error;
+    }
+
+    const racedBookmark = await Bookmark.findOne({
+      userId: currentUser._id,
+      documentId: documentRecord._id,
+      pageNumber,
+    })
+      .select("_id pageNumber createdAt updatedAt")
+      .lean();
+
+    if (!racedBookmark) {
+      throw error;
+    }
+
+    res.status(200).json({
+      bookmark: racedBookmark,
+    });
+  }
 }
 
 export async function deleteBookmark(
@@ -219,13 +237,13 @@ export async function deleteBookmark(
   res: Response,
 ): Promise<void> {
   const documentId = getSingleRouteParam(req.params.id);
+
   const pageNumber = parsePageNumber(req.params.pageNumber);
 
   if (!documentId) {
     res.status(400).json({
       error: "Invalid document ID",
     });
-
     return;
   }
 
@@ -233,7 +251,6 @@ export async function deleteBookmark(
     res.status(400).json({
       error: "Invalid page number",
     });
-
     return;
   }
 
@@ -253,7 +270,6 @@ export async function deleteBookmark(
     res.status(400).json({
       error: "Page number exceeds document length",
     });
-
     return;
   }
 
@@ -267,7 +283,6 @@ export async function deleteBookmark(
     res.status(404).json({
       error: "Bookmark not found",
     });
-
     return;
   }
 

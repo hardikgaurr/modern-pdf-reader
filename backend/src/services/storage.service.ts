@@ -1,19 +1,30 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-
 import { env } from "../config/env.js";
 
 const supabase: SupabaseClient = createClient(
   env.supabaseUrl,
   env.supabaseServiceKey,
-  { auth: { persistSession: false } },
+  {
+    auth: {
+      persistSession: false,
+    },
+  },
 );
 
 const BUCKET = env.supabaseBucketName;
 
 /**
- * Narrow storage abstraction. Controllers/services must go through these
- * functions only — the Supabase client itself is never exported.
+ * Narrow storage abstraction. Controllers/services must go
+ * through these functions only — the Supabase client itself
+ * is never exported.
  */
+
+export interface StorageListItem {
+  name: string;
+  id: string | null;
+  updatedAt: string | null;
+  createdAt: string | null;
+}
 
 export async function uploadObject(
   objectPath: string,
@@ -22,7 +33,10 @@ export async function uploadObject(
 ): Promise<void> {
   const { error } = await supabase.storage
     .from(BUCKET)
-    .upload(objectPath, data, { contentType, upsert: true });
+    .upload(objectPath, data, {
+      contentType,
+      upsert: false,
+    });
 
   if (error) {
     throw new Error(
@@ -38,11 +52,14 @@ export async function downloadObject(objectPath: string): Promise<Buffer> {
 
   if (error || !data) {
     throw new Error(
-      `Storage download failed for "${objectPath}": ${error?.message ?? "unknown error"}`,
+      `Storage download failed for "${objectPath}": ${
+        error?.message ?? "unknown error"
+      }`,
     );
   }
 
   const arrayBuffer = await data.arrayBuffer();
+
   return Buffer.from(arrayBuffer);
 }
 
@@ -56,11 +73,46 @@ export async function getSignedUrl(
 
   if (error || !data) {
     throw new Error(
-      `Failed to create signed URL for "${objectPath}": ${error?.message ?? "unknown error"}`,
+      `Failed to create signed URL for "${objectPath}": ${
+        error?.message ?? "unknown error"
+      }`,
     );
   }
 
   return data.signedUrl;
+}
+
+export async function listObjects(
+  folderPath: string,
+  options: {
+    limit?: number;
+    offset?: number;
+  } = {},
+): Promise<StorageListItem[]> {
+  const limit = options.limit ?? 100;
+  const offset = options.offset ?? 0;
+
+  const { data, error } = await supabase.storage.from(BUCKET).list(folderPath, {
+    limit,
+    offset,
+    sortBy: {
+      column: "name",
+      order: "asc",
+    },
+  });
+
+  if (error) {
+    throw new Error(
+      `Storage listing failed for "${folderPath}": ${error.message}`,
+    );
+  }
+
+  return (data ?? []).map((item) => ({
+    name: item.name,
+    id: item.id,
+    updatedAt: item.updated_at,
+    createdAt: item.created_at,
+  }));
 }
 
 export async function removeObjects(paths: string[]): Promise<void> {

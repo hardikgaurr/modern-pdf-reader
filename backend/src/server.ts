@@ -6,17 +6,30 @@ import express, {
 } from "express";
 import cors from "cors";
 import multer from "multer";
-
 import { env } from "./config/env.js";
 import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/auth.routes.js";
 import subscriptionRoutes from "./routes/subscription.routes.js";
 import documentsRoutes from "./routes/documents.routes.js";
+import { InvalidPdfUploadError } from "./middleware/upload.middleware.js";
+import { startEphemeralCleanup } from "./services/ephemeral-cleanup.service.js";
 
 function notFoundHandler(_req: Request, res: Response): void {
   res.status(404).json({
     error: "Route not found",
   });
+}
+
+function getErrorProperty(error: unknown, property: string): unknown {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  if (!(property in error)) {
+    return undefined;
+  }
+
+  return (error as Record<string, unknown>)[property];
 }
 
 function errorHandler(
@@ -26,6 +39,13 @@ function errorHandler(
   _next: NextFunction,
 ): void {
   if (res.headersSent) {
+    return;
+  }
+
+  if (error instanceof InvalidPdfUploadError) {
+    res.status(400).json({
+      error: error.message,
+    });
     return;
   }
 
@@ -43,15 +63,23 @@ function errorHandler(
     res.status(400).json({
       error: messages[error.code] ?? "Invalid multipart upload",
     });
-
     return;
   }
 
-  if (error instanceof SyntaxError) {
+  const errorStatus = getErrorProperty(error, "status");
+  const errorType = getErrorProperty(error, "type");
+
+  if (errorStatus === 413 || errorType === "entity.too.large") {
+    res.status(413).json({
+      error: "Request body is too large",
+    });
+    return;
+  }
+
+  if (errorType === "entity.parse.failed" || error instanceof SyntaxError) {
     res.status(400).json({
       error: "Invalid JSON body",
     });
-
     return;
   }
 
@@ -65,8 +93,10 @@ function errorHandler(
 export function createApp(): Express {
   const app = express();
 
+  app.disable("x-powered-by");
+
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: "1mb" }));
 
   app.use("/api/auth", authRoutes);
   app.use("/api/subscription", subscriptionRoutes);
@@ -80,6 +110,8 @@ export function createApp(): Express {
 
 async function main(): Promise<void> {
   await connectDB();
+
+  startEphemeralCleanup();
 
   const app = createApp();
 

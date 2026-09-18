@@ -1,7 +1,5 @@
 import { unlink, readFile } from "node:fs/promises";
-
 import type { Response } from "express";
-
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { DocumentModel } from "../models/Document.js";
 import { getPdfPageCount } from "../services/pdf-validation.service.js";
@@ -21,98 +19,82 @@ export async function uploadDocument(
 ): Promise<void> {
   const file = req.file;
 
-  const title =
-    typeof req.body?.title === "string" ? req.body.title.trim() : "";
-
   if (!file) {
     res.status(400).json({
       error: "PDF file is required",
     });
-
     return;
   }
-
-  if (!title || title.length > 200) {
-    await unlink(file.path).catch(() => undefined);
-
-    res.status(400).json({
-      error: "A valid title (1-200 characters) is required",
-    });
-
-    return;
-  }
-
-  let fileBuffer: Buffer;
-
-  try {
-    fileBuffer = await readFile(file.path);
-  } catch {
-    await unlink(file.path).catch(() => undefined);
-
-    res.status(400).json({
-      error: "Uploaded file could not be read",
-    });
-
-    return;
-  }
-
-  if (!fileBuffer.subarray(0, 5).equals(PDF_MAGIC_BYTES)) {
-    await unlink(file.path).catch(() => undefined);
-
-    res.status(400).json({
-      error: "File is not a valid PDF",
-    });
-
-    return;
-  }
-
-  let pageCount: number;
-
-  try {
-    pageCount = await getPdfPageCount(fileBuffer);
-  } catch {
-    await unlink(file.path).catch(() => undefined);
-
-    res.status(400).json({
-      error: "File is not a valid PDF",
-    });
-
-    return;
-  }
-
-  if (pageCount < 1) {
-    await unlink(file.path).catch(() => undefined);
-
-    res.status(400).json({
-      error: "PDF contains no pages",
-    });
-
-    return;
-  }
-
-  if (pageCount > MAX_PAGES) {
-    await unlink(file.path).catch(() => undefined);
-
-    res.status(400).json({
-      error: `PDF cannot contain more than ${MAX_PAGES} pages`,
-    });
-
-    return;
-  }
-
-  const ownerId = req.user!.userId;
-
-  const documentRecord = await DocumentModel.create({
-    title,
-    totalPages: 0,
-    coverImageKey: null,
-    ownerId,
-    status: "processing",
-  });
 
   const uploadedPaths: string[] = [];
+  let documentId: string | null = null;
 
   try {
+    const title =
+      typeof req.body?.title === "string" ? req.body.title.trim() : "";
+
+    if (!title || title.length > 200) {
+      res.status(400).json({
+        error: "A valid title (1-200 characters) is required",
+      });
+      return;
+    }
+
+    let fileBuffer: Buffer;
+
+    try {
+      fileBuffer = await readFile(file.path);
+    } catch {
+      res.status(400).json({
+        error: "Uploaded file could not be read",
+      });
+      return;
+    }
+
+    if (!fileBuffer.subarray(0, 5).equals(PDF_MAGIC_BYTES)) {
+      res.status(400).json({
+        error: "File is not a valid PDF",
+      });
+      return;
+    }
+
+    let pageCount: number;
+
+    try {
+      pageCount = await getPdfPageCount(fileBuffer);
+    } catch {
+      res.status(400).json({
+        error: "File is not a valid PDF",
+      });
+      return;
+    }
+
+    if (pageCount < 1) {
+      res.status(400).json({
+        error: "PDF contains no pages",
+      });
+      return;
+    }
+
+    if (pageCount > MAX_PAGES) {
+      res.status(400).json({
+        error: `PDF cannot contain more than ${MAX_PAGES} pages`,
+      });
+      return;
+    }
+
+    const ownerId = req.user!.userId;
+
+    const documentRecord = await DocumentModel.create({
+      title,
+      totalPages: 0,
+      coverImageKey: null,
+      ownerId,
+      status: "processing",
+    });
+
+    documentId = documentRecord.id as string;
+
     const pages = await renderAllPdfPages(file.path);
 
     if (
@@ -126,10 +108,7 @@ export async function uploadDocument(
     }
 
     for (const page of pages) {
-      const objectPath = pageObjectPath(
-        documentRecord.id as string,
-        page.pageNumber,
-      );
+      const objectPath = pageObjectPath(documentId, page.pageNumber);
 
       await uploadObject(objectPath, page.buffer, "image/png");
 
@@ -138,10 +117,7 @@ export async function uploadDocument(
 
     documentRecord.totalPages = pages.length;
 
-    documentRecord.coverImageKey = pageObjectPath(
-      documentRecord.id as string,
-      1,
-    );
+    documentRecord.coverImageKey = pageObjectPath(documentId, 1);
 
     documentRecord.status = "ready";
 
@@ -154,20 +130,26 @@ export async function uploadDocument(
       status: documentRecord.status,
       createdAt: documentRecord.createdAt,
     });
-  } catch (error) {
-    documentRecord.status = "failed";
-
-    await documentRecord.save().catch(() => undefined);
+  } catch (error: unknown) {
+    if (documentId) {
+      await DocumentModel.findByIdAndUpdate(documentId, {
+        $set: {
+          status: "failed",
+        },
+      }).catch(() => undefined);
+    }
 
     await removeObjects(uploadedPaths).catch(() => undefined);
 
     console.error(
-      `Document processing failed for ${documentRecord.id as string}:`,
+      documentId
+        ? `Document processing failed for ${documentId}:`
+        : "Document creation failed:",
       error,
     );
 
-    res.status(422).json({
-      error: "PDF processing failed",
+    res.status(documentId ? 422 : 500).json({
+      error: documentId ? "PDF processing failed" : "Failed to create document",
     });
   } finally {
     await unlink(file.path).catch(() => undefined);

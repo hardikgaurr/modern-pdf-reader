@@ -1,6 +1,5 @@
 import type { Response } from "express";
 import { Types } from "mongoose";
-
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { DocumentModel } from "../models/Document.js";
 import { ReadingProgress } from "../models/ReadingProgress.js";
@@ -16,6 +15,14 @@ function getSingleRouteParam(
   return value;
 }
 
+function isDuplicateKeyError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  return "code" in error && (error as { code?: unknown }).code === 11000;
+}
+
 async function getAuthorizedSubscriber(
   req: AuthRequest,
   res: Response,
@@ -24,7 +31,6 @@ async function getAuthorizedSubscriber(
     res.status(401).json({
       error: "Authentication required",
     });
-
     return null;
   }
 
@@ -34,7 +40,6 @@ async function getAuthorizedSubscriber(
     res.status(401).json({
       error: "Account no longer exists",
     });
-
     return null;
   }
 
@@ -42,7 +47,6 @@ async function getAuthorizedSubscriber(
     res.status(403).json({
       error: "Subscription required to access reading progress",
     });
-
     return null;
   }
 
@@ -56,7 +60,6 @@ async function getReadyDocument(documentId: string, res: Response) {
     res.status(400).json({
       error: "Invalid document ID",
     });
-
     return null;
   }
 
@@ -66,7 +69,6 @@ async function getReadyDocument(documentId: string, res: Response) {
     res.status(404).json({
       error: "Document not found",
     });
-
     return null;
   }
 
@@ -74,7 +76,6 @@ async function getReadyDocument(documentId: string, res: Response) {
     res.status(409).json({
       error: "Document is not available for reading",
     });
-
     return null;
   }
 
@@ -91,7 +92,6 @@ export async function getReadingProgress(
     res.status(400).json({
       error: "Invalid document ID",
     });
-
     return;
   }
 
@@ -129,7 +129,6 @@ export async function saveReadingProgress(
     res.status(400).json({
       error: "Invalid document ID",
     });
-
     return;
   }
 
@@ -155,7 +154,6 @@ export async function saveReadingProgress(
     res.status(400).json({
       error: "Current page must be a positive integer",
     });
-
     return;
   }
 
@@ -163,29 +161,47 @@ export async function saveReadingProgress(
     res.status(400).json({
       error: "Current page exceeds document length",
     });
-
     return;
   }
 
-  const progress = await ReadingProgress.findOneAndUpdate(
-    {
-      userId: currentUser._id,
-      documentId: documentRecord._id,
+  const query = {
+    userId: currentUser._id,
+    documentId: documentRecord._id,
+  };
+
+  const update = {
+    $set: {
+      currentPage,
     },
-    {
-      $set: {
-        currentPage,
-      },
-    },
-    {
+  };
+
+  let progress;
+
+  try {
+    progress = await ReadingProgress.findOneAndUpdate(query, update, {
       new: true,
       upsert: true,
       runValidators: true,
       setDefaultsOnInsert: true,
-    },
-  )
-    .select("documentId currentPage createdAt updatedAt")
-    .lean();
+    })
+      .select("documentId currentPage createdAt updatedAt")
+      .lean();
+  } catch (error: unknown) {
+    if (!isDuplicateKeyError(error)) {
+      throw error;
+    }
+
+    progress = await ReadingProgress.findOneAndUpdate(query, update, {
+      new: true,
+      runValidators: true,
+    })
+      .select("documentId currentPage createdAt updatedAt")
+      .lean();
+
+    if (!progress) {
+      throw error;
+    }
+  }
 
   res.status(200).json({
     progress,
