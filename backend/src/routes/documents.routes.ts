@@ -1,5 +1,4 @@
 import { Router } from "express";
-
 import {
   listDocuments,
   uploadDocument,
@@ -9,6 +8,7 @@ import {
   requireAuth,
   requireSubscriber,
 } from "../middleware/auth.middleware.js";
+import { uploadRateLimiter } from "../middleware/rate-limit.middleware.js";
 import { pdfUpload } from "../middleware/upload.middleware.js";
 import pagesRoutes from "./pages.routes.js";
 import bookmarkRoutes from "./bookmark.routes.js";
@@ -25,6 +25,7 @@ router.post(
   "/",
   requireAuth,
   requireAdmin,
+  uploadRateLimiter,
   pdfUpload.single("file"),
   uploadDocument,
 );

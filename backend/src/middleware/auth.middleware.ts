@@ -1,5 +1,4 @@
 import type { NextFunction, Request, Response } from "express";
-
 import { type TokenPayload, verifyToken } from "../utils/jwt.util.js";
 
 export interface AuthRequest extends Request {
@@ -14,23 +13,24 @@ export function requireAuth(
   const header = req.headers.authorization;
 
   if (!header?.startsWith("Bearer ")) {
-    res
-      .status(401)
-      .json({ error: "Missing or malformed authorization header" });
+    res.status(401).json({
+      error: "Missing or malformed authorization header",
+    });
     return;
   }
 
   const token = header.slice("Bearer ".length).trim();
 
   if (!token) {
-    res
-      .status(401)
-      .json({ error: "Missing or malformed authorization header" });
+    res.status(401).json({
+      error: "Missing or malformed authorization header",
+    });
     return;
   }
 
   try {
-    req.user = verifyToken(token);
+    req.user = verifyToken(token, "access");
+
     next();
   } catch {
     res.status(401).json({

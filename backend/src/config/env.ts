@@ -7,6 +7,7 @@ interface AppEnv {
   supabaseServiceKey: string;
   supabaseBucketName: string;
   graphicsMagickPath: string;
+  corsOrigins: string[];
   port: number;
 }
 
@@ -15,6 +16,16 @@ function getRequiredEnv(name: string): string {
 
   if (!value || value.trim().length === 0) {
     throw new Error(`Missing required environment variable: ${name}`);
+  }
+
+  return value.trim();
+}
+
+function getOptionalEnv(name: string, defaultValue: string): string {
+  const value = process.env[name];
+
+  if (!value || value.trim().length === 0) {
+    return defaultValue;
   }
 
   return value.trim();
@@ -31,6 +42,15 @@ function getPort(): number {
   return port;
 }
 
+function getCorsOrigins(): string[] {
+  const rawOrigins = getOptionalEnv("CORS_ORIGIN", "http://localhost:4200");
+
+  return rawOrigins
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+}
+
 export const env: AppEnv = {
   mongodbUri: getRequiredEnv("MONGODB_URI"),
   jwtSecret: getRequiredEnv("JWT_SECRET"),
@@ -38,5 +58,6 @@ export const env: AppEnv = {
   supabaseServiceKey: getRequiredEnv("SUPABASE_SERVICE_KEY"),
   supabaseBucketName: getRequiredEnv("SUPABASE_BUCKET_NAME"),
   graphicsMagickPath: getRequiredEnv("GRAPHICSMAGICK_PATH"),
+  corsOrigins: getCorsOrigins(),
   port: getPort(),
 };
